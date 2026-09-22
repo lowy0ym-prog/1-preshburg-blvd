@@ -1,0 +1,55 @@
+name: Build Preshburg Blender Model
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "build_preshburg.py"
+      - ".github/workflows/build-blender.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Download Blender
+        run: |
+          wget -q https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz
+          tar -xf blender-4.5.3-linux-x64.tar.xz
+          mv blender-4.5.3-linux-x64 blender
+
+      - name: Run Blender build script
+        run: |
+          mkdir -p output
+          ./blender/blender \
+            --background \
+            --python build_preshburg.py
+
+      - name: Check generated files
+        run: |
+          echo "Files created:"
+          find . -maxdepth 3 -type f \
+            \( -name "*.blend" -o -name "*.png" \) \
+            -print
+
+      - name: Find Blender file
+        run: |
+          BLEND_FILE=$(find . -type f -name "*.blend" | head -n 1)
+
+          if [ -z "$BLEND_FILE" ]; then
+            echo "ERROR: No .blend file was created."
+            exit 1
+          fi
+
+          echo "Found: $BLEND_FILE"
+          cp "$BLEND_FILE" output/Preshburg_Blvd_Unit_401.blend
+
+      - name: Upload Blender project
+        uses: actions/upload-artifact@v4
+        with:
+          name: Preshburg-Blvd-Unit-401-Blender
+          path: output/Preshburg_Blvd_Unit_401.blend
+          if-no-files-found: error
