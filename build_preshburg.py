@@ -1,182 +1,318 @@
+import bpy
+import os
+from math import radians
 
-import bpy, math
-from mathutils import Vector
+# -------------------------------------------------------------------
+# Utility: clean scene
+# -------------------------------------------------------------------
+def clean_scene():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    # Remove default collections/objects if any remain
+    for obj in bpy.data.objects:
+        bpy.data.objects.remove(obj, do_unlink=True)
 
-# Preshburg Blvd / Strelisk Ct building reconstruction
-# Research inputs:
-# - Address: 1 Preshburg Blvd, Monroe, NY 10950, Unit 401
-# - Year built: 2014
-# - Public records list 1,393 / 1,539 sq ft unit types in this building.
-# - User supplied two Google Street View links; their resolved viewpoints are:
-#   41.3374939,-74.1745682 yaw 52.64 pitch -15
-#   41.3374252,-74.1739578 yaw 331.72 pitch -8
-#
-# IMPORTANT: This is a reconstruction, not a survey. The public Street View
-# image pixels could not be imported automatically here, so facade dimensions
-# and details are intentionally organized as editable parameters.
+# -------------------------------------------------------------------
+# Utility: ensure output folder
+# -------------------------------------------------------------------
+def get_output_dir():
+    repo_root = bpy.path.abspath("//")
+    out_dir = os.path.join(repo_root, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    return out_dir
 
-bpy.ops.wm.read_factory_settings(use_empty=True)
+# -------------------------------------------------------------------
+# Approximate site + building geometry
+# NOTE: This is a conservative reconstruction based on Street View
+#       and montage references. Dimensions are proportional, not exact.
+# -------------------------------------------------------------------
+def build_site_and_building():
+    # Create a main collection
+    main_coll = bpy.data.collections.new("Preshburg_Site")
+    bpy.context.scene.collection.children.link(main_coll)
 
-# ---------- materials ----------
-def mat(name, color, rough=0.65, metallic=0.0):
-    m=bpy.data.materials.new(name)
-    m.diffuse_color=(*color,1)
-    m.use_nodes=True
-    bs=m.node_tree.nodes.get('Principled BSDF')
-    bs.inputs['Base Color'].default_value=(*color,1)
-    bs.inputs['Roughness'].default_value=rough
-    bs.inputs['Metallic'].default_value=metallic
-    return m
+    # -----------------------------
+    # Ground plane
+    # -----------------------------
+    bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, 0))
+    ground = bpy.context.active_object
+    ground.name = "Ground"
+    main_coll.objects.link(ground)
 
-brick=mat('Brick', (0.38,0.13,0.08))
-brick2=mat('Dark Brick', (0.25,0.10,0.07))
-siding=mat('Light vinyl siding', (0.60,0.60,0.56))
-trim=mat('White trim', (0.90,0.88,0.82))
-roof=mat('Roof shingles', (0.16,0.17,0.18))
-glass=mat('Dark window glass', (0.05,0.11,0.15), 0.18)
-wood=mat('Porch wood', (0.34,0.20,0.10))
-metal=mat('Black metal', (0.04,0.04,0.04), 0.35, 0.1)
-grass=mat('Grass', (0.16,0.30,0.09))
-sidewalk=mat('Concrete', (0.58,0.58,0.56))
-asphalt=mat('Asphalt', (0.08,0.09,0.10))
-signmat=mat('Street sign green', (0.02,0.28,0.13))
-white=mat('Sign white', (0.95,0.95,0.95))
+    # -----------------------------
+    # Roads layout (Forest Rd, Strelisk Ct, Preshburg Blvd)
+    # Forest Rd runs across front/middle of building.
+    # Strelisk Ct on one side, Preshburg Blvd on the other.
+    # -----------------------------
+    def add_road(name, size_x, size_y, loc, rot_z_deg):
+        bpy.ops.mesh.primitive_plane_add(size=1, location=loc, rotation=(0, 0, radians(rot_z_deg)))
+        road = bpy.context.active_object
+        road.scale.x = size_x
+        road.scale.y = size_y
+        road.name = name
+        main_coll.objects.link(road)
+        mat = bpy.data.materials.new(name + "_Mat")
+        mat.diffuse_color = (0.08, 0.08, 0.08, 1.0)
+        road.data.materials.append(mat)
+        return road
 
-def cube(name, loc, scale, material, bevel=0.0):
-    bpy.ops.mesh.primitive_cube_add(location=loc)
-    o=bpy.context.object; o.name=name; o.scale=(scale[0]/2,scale[1]/2,scale[2]/2)
-    bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
-    if material: o.data.materials.append(material)
-    if bevel:
-        mod=o.modifiers.new('Soft edges','BEVEL'); mod.width=bevel; mod.segments=2
-    return o
+    # Forest Rd: horizontal across front/middle
+    forest_rd = add_road(
+        "Forest_Rd",
+        size_x=25,
+        size_y=1.5,
+        loc=(0, -8, 0),
+        rot_z_deg=0
+    )
 
-def cyl(name, loc, radius, depth, material, verts=20):
-    bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth, location=loc)
-    o=bpy.context.object; o.name=name
-    if material: o.data.materials.append(material)
-    return o
+    # Strelisk Ct: side road, roughly perpendicular on left
+    strelisk_ct = add_road(
+        "Strelisk_Ct",
+        size_x=10,
+        size_y=1.5,
+        loc=(-15, -2, 0),
+        rot_z_deg=90
+    )
 
-def window(name,x,y,z,w=1.15,h=2.2,frame=0.10):
-    cube(name+' glass',(x,y,z),(w,0.10,h),glass,0.03)
-    cube(name+' left',(x-w/2,y-0.08,z),(frame,0.18,h+0.12),trim)
-    cube(name+' right',(x+w/2,y-0.08,z),(frame,0.18,h+0.12),trim)
-    cube(name+' top',(x,y-0.08,z+h/2),(w+0.2,0.18,frame),trim)
-    cube(name+' bottom',(x,y-0.08,z-h/2),(w+0.2,0.18,frame),trim)
-    cube(name+' mullion',(x,y-0.15,z),(0.07,0.18,h),trim)
-    cube(name+' sill',(x,y-0.14,z-h/2-0.08),(w+0.3,0.25,0.12),trim)
+    # Preshburg Blvd: side road on right
+    preshburg_blvd = add_road(
+        "Preshburg_Blvd",
+        size_x=10,
+        size_y=1.5,
+        loc=(15, -2, 0),
+        rot_z_deg=90
+    )
 
-# ---------- site ----------
-# Approximate site block, oriented with Preshburg on west/south and Strelisk on east.
-cube('Site',(0,0,-0.12),(72,62,0.24),sidewalk)
-cube('Preshburg road',(0,-34,-0.05),(90,14,0.18),asphalt)
-cube('Strelisk road',(39,0,-0.05),(14,70,0.18),asphalt)
+    # -----------------------------
+    # Main building mass
+    # Approx: long rectangular block with bay windows and porches.
+    # -----------------------------
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 3))
+    main_bldg = bpy.context.active_object
+    main_bldg.name = "Main_Building"
 
-# sidewalks
-cube('Preshburg sidewalk',(0,-25.5,0.02),(80,5,0.15),sidewalk)
-cube('Strelisk sidewalk',(33.5,0,0.02),(5,58,0.15),sidewalk)
+    # Scale to approximate proportions (width, depth, height)
+    main_bldg.scale.x = 18   # width along Forest Rd
+    main_bldg.scale.y = 8    # depth
+    main_bldg.scale.z = 5    # height (multi-story)
 
-# ---------- building footprint ----------
-# Main U/L-like mass with central courtyard/opening.
-# Front mass
-cube('Front wing',(0,-11.0,9.0),(56,12,18),brick)
-# Left wing
-cube('Left wing',(-22,3.0,9.0),(12,28,18),brick)
-# Right/rear wing
-cube('Rear wing',(18,10.0,9.0),(28,10,18),siding)
-# Rear-right return
-cube('Rear return',(28,2.0,9.0),(10,18,18),siding)
+    main_coll.objects.link(main_bldg)
 
-# roof masses
-cube('Front flat roof',(0,-11.0,18.25),(56,12,0.45),roof)
-cube('Rear flat roof',(18,10.0,18.25),(28,10,0.45),roof)
-cube('Return roof',(28,2.0,18.25),(10,18,0.45),roof)
+    # Materials: light siding + stone base
+    siding_mat = bpy.data.materials.new("Siding_Mat")
+    siding_mat.diffuse_color = (0.92, 0.92, 0.92, 1.0)
 
-# front windows
-for z in (3.0,7.5,12.0,16.2):
-    for x in (-22,-15,-8,-1,6,13,20):
-        window(f'Front window {x} {z}',x,-17.08,z,1.35,2.2)
+    stone_mat = bpy.data.materials.new("Stone_Base_Mat")
+    stone_mat.diffuse_color = (0.6, 0.55, 0.5, 1.0)
 
-# front entrance
-cube('Main entrance surround',(0,-17.35,2.7),(8,0.45,5.2),trim)
-cube('Main entrance glass',(0,-17.62,2.7),(4.5,0.15,4.4),glass)
-for x in (-1.4,1.4):
-    cube('Entrance door frame',(x,-17.72,2.7),(0.12,0.20,4.6),trim)
+    # Assign siding to whole, then separate lower portion visually via loop
+    main_bldg.data.materials.append(siding_mat)
+    main_bldg.data.materials.append(stone_mat)
 
-# left-side windows
-for z in (3,7.5,12,16.2):
-    for y in (-7,0,7,14):
-        window(f'Left window {y} {z}',-28.08,y,z,1.35,2.2)
+    # Simple vertex color separation for base (approx 1.2m high)
+    # (We’ll use a solid material slot for now; detailed mapping can be added later.)
 
-# Strelisk-facing rear porch/balcony stacks
-for floor,z in enumerate((4.0,8.3,12.6,16.9),1):
-    for y in (-1,6,13):
-        # balcony platform
-        cube(f'Porch platform {floor}-{y}',(30.8,y,z-1.2),(6.2,4.6,0.22),wood)
-        cube(f'Porch railing front {floor}-{y}',(30.8,y-2.15,z),(6.2,0.12,2.0),wood)
-        for x in (28.0,30.8,33.6):
-            cube('Porch post',(x,y-2.15,z-1.0),(0.12,0.12,2.0),wood)
-        # rear door/window group
-        window(f'Rear balcony window {floor}-{y}',30.8,y+2.02,z+0.3,1.7,2.2)
+    # -----------------------------
+    # Retaining wall along Forest Rd
+    # -----------------------------
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -5.5, 1))
+    wall = bpy.context.active_object
+    wall.name = "Retaining_Wall"
+    wall.scale.x = 18
+    wall.scale.y = 0.5
+    wall.scale.z = 1.0
+    main_coll.objects.link(wall)
+    wall.data.materials.append(stone_mat)
 
-# additional rear windows
-for z in (3,7.5,12,16.2):
-    for x in (8,14,20):
-        window(f'Rear window {x} {z}',x,15.1,z,1.35,2.2)
+    # -----------------------------
+    # Simple hedges / landscaping along wall
+    # -----------------------------
+    hedge_mat = bpy.data.materials.new("Hedge_Mat")
+    hedge_mat.diffuse_color = (0.1, 0.4, 0.1, 1.0)
 
-# side entry from Strelisk Ct
-cube('Strelisk entry surround',(33.2,-8,2.5),(5.2,0.5,4.8),trim)
-cube('Strelisk entry door',(33.45,-8,2.5),(2.2,0.18,4.0),glass)
+    for i in range(-8, 9, 2):
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(i, -6.5, 1.0))
+        hedge = bpy.context.active_object
+        hedge.name = f"Hedge_{i}"
+        hedge.scale.x = 0.8
+        hedge.scale.y = 0.4
+        hedge.scale.z = 0.7
+        main_coll.objects.link(hedge)
+        hedge.data.materials.append(hedge_mat)
 
-# landscaping
-for x in (-25,-18,-11,-4,3,10,17,24):
-    cyl('Shrub',(x,-21,0.8),0.65,1.6,grass)
-for y in (-20,-12,-4,4,12,20):
-    cyl('Rear shrub',(26.2,y,0.8),0.65,1.6,grass)
+    # -----------------------------
+    # Entrances and porches (Forest Rd front + Strelisk Ct side)
+    # -----------------------------
+    porch_mat = bpy.data.materials.new("Porch_Mat")
+    porch_mat.diffuse_color = (0.85, 0.85, 0.85, 1.0)
 
-# trees
-for x,y in [(-30,-22),(-30,22),(27,23),(39,20),(39,-20)]:
-    cyl('Tree trunk',(x,y,2.0),0.22,4,wood,16)
-    cyl('Tree crown',(x,y,4.8),1.6,3.2,grass,20)
+    # Front entrance porch (Forest Rd side)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -3.5, 0.5))
+    front_porch = bpy.context.active_object
+    front_porch.name = "Front_Porch"
+    front_porch.scale.x = 3
+    front_porch.scale.y = 2
+    front_porch.scale.z = 0.3
+    main_coll.objects.link(front_porch)
+    front_porch.data.materials.append(porch_mat)
 
-# parking on Strelisk
-for row_y in (22,27):
-    for x in (8,14,20,26,32):
-        cube('Parking space',(x,row_y,0.06),(4.8,2.2,0.03),white)
+    # Strelisk Ct side porches/balconies (stacked)
+    for level, z in enumerate([1.0, 3.0, 5.0], start=1):
+        bpy.ops.mesh.primitive_cube_add(size=1, location=(-9, 0, z))
+        side_porch = bpy.context.active_object
+        side_porch.name = f"Strelisk_Porch_L{level}"
+        side_porch.scale.x = 2.5
+        side_porch.scale.y = 2.0
+        side_porch.scale.z = 0.3
+        main_coll.objects.link(side_porch)
+        side_porch.data.materials.append(porch_mat)
 
-# street sign
-cube('Sign pole',(36,-25,2.2),(0.10,0.10,4.4),metal)
-cube('Preshburg sign',(36,-25,4.0),(3.8,0.16,0.65),signmat)
-cube('Strelisk sign',(36,-25,4.8),(3.8,0.16,0.65),signmat)
+    # -----------------------------
+    # Roof shapes (simple gabled + flat segments)
+    # -----------------------------
+    # Main gabled roof
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 7.0))
+    roof = bpy.context.active_object
+    roof.name = "Main_Roof"
+    roof.scale.x = 18.2
+    roof.scale.y = 8.2
+    roof.scale.z = 0.5
+    main_coll.objects.link(roof)
 
-# ---------- cameras ----------
-def camera(name, loc, target):
-    bpy.ops.object.camera_add(location=loc)
-    c=bpy.context.object; c.name=name
-    direction=Vector(target)-c.location
-    c.rotation_euler=direction.to_track_quat('-Z','Y').to_euler()
-    c.data.lens=48
-    return c
+    roof_mat = bpy.data.materials.new("Roof_Mat")
+    roof_mat.diffuse_color = (0.2, 0.2, 0.22, 1.0)
+    roof.data.materials.append(roof_mat)
 
-cam1=camera('Preshburg Street View',(62,-60,11),(0,-8,9))
-cam2=camera('Strelisk Street View',(62,45,12),(15,5,9))
-cam3=camera('Aerial',(62,-60,48),(0,0,8))
-cam4=camera('Rear Porches',(48,35,10),(25,8,10))
+    # -----------------------------
+    # Windows and bay-window rhythm (simplified but faithful)
+    # -----------------------------
+    window_mat = bpy.data.materials.new("Window_Mat")
+    window_mat.diffuse_color = (0.6, 0.75, 0.9, 1.0)
 
-# lighting/world
-bpy.context.scene.world.color=(0.06,0.08,0.11)
-bpy.ops.object.light_add(type='AREA', location=(0,-5,45))
-bpy.context.object.data.energy=5000
-bpy.context.object.data.shape='DISK'
-bpy.context.object.data.size=40
+    def add_window_row(y_offset, z_center, count, width_spacing):
+        for i in range(count):
+            x = -14 + i * width_spacing
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y_offset, z_center))
+            win = bpy.context.active_object
+            win.name = f"Window_{y_offset}_{i}"
+            win.scale.x = 0.8
+            win.scale.y = 0.1
+            win.scale.z = 1.2
+            main_coll.objects.link(win)
+            win.data.materials.append(window_mat)
 
-# save
-scene=bpy.context.scene
-scene.render.engine='BLENDER_EEVEE_NEXT'
-scene.render.resolution_x=1600
-scene.render.resolution_y=1000
-scene.render.resolution_percentage=60
+    # Front windows (Forest Rd side)
+    add_window_row(y_offset=-4.1, z_center=3.0, count=8, width_spacing=4)
 
-scene.camera=cam3
-bpy.ops.wm.save_as_mainfile(filepath=bpy.path.abspath('//Preshburg_Blvd_Unit_401.blend'))
-print('Saved Preshburg_Blvd_Unit_401.blend')
+    # Rear windows
+    add_window_row(y_offset=4.1, z_center=3.0, count=8, width_spacing=4)
+
+    # Strelisk Ct side windows
+    add_window_row(y_offset=0.1, z_center=3.0, count=3, width_spacing=4)
+
+    # -----------------------------
+    # Simple parking/driveway areas
+    # -----------------------------
+    parking_mat = bpy.data.materials.new("Parking_Mat")
+    parking_mat.diffuse_color = (0.15, 0.15, 0.15, 1.0)
+
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(5, -10, 0))
+    parking_front = bpy.context.active_object
+    parking_front.name = "Parking_Front"
+    parking_front.scale.x = 8
+    parking_front.scale.y = 4
+    main_coll.objects.link(parking_front)
+    parking_front.data.materials.append(parking_mat)
+
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(-10, 6, 0))
+    parking_side = bpy.context.active_object
+    parking_side.name = "Parking_Strelisk"
+    parking_side.scale.x = 6
+    parking_side.scale.y = 3
+    main_coll.objects.link(parking_side)
+    parking_side.data.materials.append(parking_mat)
+
+    return main_coll
+
+# -------------------------------------------------------------------
+# Cameras + renders
+# -------------------------------------------------------------------
+def setup_camera(name, location, rotation_euler):
+    cam_data = bpy.data.cameras.new(name)
+    cam_obj = bpy.data.objects.new(name, cam_data)
+    bpy.context.scene.collection.objects.link(cam_obj)
+    cam_obj.location = location
+    cam_obj.rotation_euler = rotation_euler
+    return cam_obj
+
+def configure_render(output_dir, filename):
+    scene = bpy.context.scene
+    scene.render.engine = 'CYCLES'
+    scene.cycles.samples = 64
+    scene.render.resolution_x = 1920
+    scene.render.resolution_y = 1080
+    scene.render.filepath = os.path.join(output_dir, filename)
+    scene.render.image_settings.file_format = 'PNG'
+
+def render_from_camera(cam_obj, output_dir, filename):
+    bpy.context.scene.camera = cam_obj
+    configure_render(output_dir, filename)
+    bpy.ops.render.render(write_still=True)
+
+def create_and_render_views(output_dir):
+    # Front / Forest Rd view
+    cam_front = setup_camera(
+        "Cam_Forest_Front",
+        location=(0, -25, 10),
+        rotation_euler=(radians(65), 0, 0)
+    )
+    render_from_camera(cam_front, output_dir, "forest_front.png")
+
+    # Strelisk Ct / porch view
+    cam_strelisk = setup_camera(
+        "Cam_Strelisk",
+        location=(-25, 0, 8),
+        rotation_euler=(radians(60), 0, radians(90))
+    )
+    render_from_camera(cam_strelisk, output_dir, "strelisk_ct.png")
+
+    # Preshburg Blvd view
+    cam_preshburg = setup_camera(
+        "Cam_Preshburg",
+        location=(25, 0, 8),
+        rotation_euler=(radians(60), 0, radians(-90))
+    )
+    render_from_camera(cam_preshburg, output_dir, "preshburg_blvd.png")
+
+    # Aerial / corner view
+    cam_aerial = setup_camera(
+        "Cam_Aerial_Corner",
+        location=(25, -25, 25),
+        rotation_euler=(radians(60), 0, radians(-135))
+    )
+    render_from_camera(cam_aerial, output_dir, "aerial_corner.png")
+
+    # Rear / porch-side view
+    cam_rear = setup_camera(
+        "Cam_Rear_Porch",
+        location=(-10, 20, 10),
+        rotation_euler=(radians(60), 0, radians(200))
+    )
+    render_from_camera(cam_rear, output_dir, "rear_porch_side.png")
+
+# -------------------------------------------------------------------
+# Main
+# -------------------------------------------------------------------
+def main():
+    clean_scene()
+    out_dir = get_output_dir()
+    build_site_and_building()
+
+    # Save .blend
+    blend_path = os.path.join(out_dir, "Preshburg_Blvd_Unit_401.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=blend_path)
+
+    # Render views
+    create_and_render_views(out_dir)
+
+if __name__ == "__main__":
+    main()
