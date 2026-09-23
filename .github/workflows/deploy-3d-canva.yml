@@ -1,21 +1,38 @@
-name: Deploy 3D Canva
+name: Build and Deploy 3D Canva
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
+  pages: write
+  id-token: write
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Publish site to gh-pages
+
+      - name: Create downloadable ZIP
+        run: |
+          mkdir -p dist
+          cp index.html style.css app.js dist/
+          zip -r 3D-Canva.zip dist
+          
+      - name: Upload 3D Canva ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3D-Canva
+          path: 3D-Canva.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish website to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: .
+          publish_dir: dist
           force_orphan: true
           keep_files: false
