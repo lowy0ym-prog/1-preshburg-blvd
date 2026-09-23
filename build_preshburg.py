@@ -48,7 +48,9 @@ def beam_between(name,a,b,radius,material):
     o.rotation_mode='QUATERNION'; o.rotation_quaternion=vec.to_track_quat('Z','Y'); return o
 
 def clean():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    # The GitHub workflow already starts Blender with --factory-startup.
+    # Do not reset the scene here because that would delete the materials
+    # created above before the model is built.
     os.makedirs(OUT,exist_ok=True)
 
 def make_roads():
