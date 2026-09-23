@@ -168,7 +168,21 @@ def main():
     clean(); setup_world(); make_roads(); make_building(); front_windows(); preshburg_windows()
     strelisk_porches(); front_entry(); retaining_wall_and_hedges(); parking_and_driveways(); signage()
     render_views()
+    # Keep the native Blender file, plus browser-friendly exports.
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Preshburg_Blvd_Unit_401.blend'))
+
+    # GLB preserves the scene materials and is suitable for browser-based 3D viewers.
+    bpy.ops.export_scene.gltf(
+        filepath=os.path.join(OUT,'Preshburg_Blvd_Unit_401.glb'),
+        export_format='GLB',
+        use_selection=False
+    )
+
+    # STL is included specifically because GitHub can display STL models directly in its web 3D viewer.
+    bpy.ops.wm.stl_export(
+        filepath=os.path.join(OUT,'Preshburg_Blvd_Unit_401.stl'),
+        export_selected_objects=False
+    )
 
 if __name__=='__main__':
     main()
