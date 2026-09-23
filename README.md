@@ -1,6 +1,6 @@
 # 1 Preshburg Blvd — Blender reconstruction
 
-This repository builds an editable Blender model and PNG/GLB previews of the building at 1 Preshburg Blvd, Monroe, NY 10950.
+This repository builds an editable Blender model and PNG/GLB previews of the building at 1 Preshburg Blvd, Unit 401, Monroe, NY 10950.
 
 ## Geometry priorities
 - Forest Rd is the front road across the south/front of the site.
