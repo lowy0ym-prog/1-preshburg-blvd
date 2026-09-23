@@ -3,7 +3,7 @@ import os
 from math import radians
 
 ROOT = bpy.path.abspath('//')
-OUT = os.path.join(ROOT, 'output')
+OUT = os.path.join(os.environ.get('GITHUB_WORKSPACE', ROOT), 'output')
 
 def mat(name, color, rough=0.65, metallic=0.0):
     m = bpy.data.materials.new(name=name)
@@ -91,12 +91,14 @@ def front_windows():
             window(f'Forest_window_{li}_{i}',(x,-7.34,z),.95,1.65,True)
 
 def preshburg_windows():
+    # Preshburg Blvd is the RIGHT/EAST side (positive X), not the Forest Rd facade.
     for li,z in enumerate([3.8,6.7,9.6,12.5]):
-        for i,x in enumerate([-11.8,-5.9,0,5.9,11.8]):
-            window(f'Preshburg_bay_{li}_{i}_c',(x,-7.34,z),1.05,1.65,True)
-            window(f'Preshburg_bay_{li}_{i}_l',(x-.72,-7.36,z),.48,1.45,True)
-            window(f'Preshburg_bay_{li}_{i}_r',(x+.72,-7.36,z),.48,1.45,True)
-
+        for i,y in enumerate([-5.2,-1.8,1.8,5.2]):
+            cube(f'Preshburg_window_{li}_{i}_glass',(16.42,y,z),(.16,1.05,1.65),GLASS,.02)
+            cube(f'Preshburg_window_{li}_{i}_left',(16.32,y-.52,z),(.08,.10,1.80),TRIM)
+            cube(f'Preshburg_window_{li}_{i}_right',(16.32,y+.52,z),(.08,.10,1.80),TRIM)
+            cube(f'Preshburg_window_{li}_{i}_top',(16.32,y,z+.82),(.08,1.18,.10),TRIM)
+            cube(f'Preshburg_window_{li}_{i}_bottom',(16.32,y,z-.82),(.08,1.18,.10),TRIM)
 def strelisk_porches():
     for li,z in enumerate([3.4,6.25,9.1,11.95]):
         cube(f'Strelisk_balcony_{li}',(-16.9,0,z-.78),(4.0,3.5,.28),WOOD)
