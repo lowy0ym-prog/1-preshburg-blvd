@@ -3,6 +3,7 @@ name: Build Preshburg Blender Model
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "build_preshburg.py"
       - ".github/workflows/build-blender.yml"
@@ -10,46 +11,47 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout project
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Blender
+      - name: Install Blender
+        shell: bash
         run: |
-          wget -q https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz
-          tar -xf blender-4.5.14-linux-x64.tar.xz
-          mv blender-4.5.14-linux-x64 blender
+          set -euo pipefail
+          URL="https://download.blender.org/release/Blender4.5/blender-4.5.4-linux-x64.tar.xz"
+          wget -q "$URL" -O blender.tar.xz
+          tar -xf blender.tar.xz
+          BLENDER_DIR=$(find . -maxdepth 1 -type d -name 'blender-*' | head -n 1)
+          test -n "$BLENDER_DIR"
+          mv "$BLENDER_DIR" blender
+          ./blender/blender --version
 
-      - name: Run Blender build script
+      - name: Build and render
+        shell: bash
         run: |
+          set -euo pipefail
+          rm -rf output
           mkdir -p output
-          ./blender/blender \
-            --background \
-            --python build_preshburg.py
+          ./blender/blender --background --factory-startup --python build_preshburg.py
 
-      - name: Check generated files
+      - name: Validate outputs
+        shell: bash
         run: |
-          echo "Files created:"
-          find . -maxdepth 3 -type f \
-            \( -name "*.blend" -o -name "*.png" \) \
-            -print
+          set -euo pipefail
+          test -s output/Preshburg_Blvd_Unit_401.blend
+          for f in forest_front.png strelisk_ct.png preshburg_blvd.png aerial_corner.png rear_porch_side.png; do
+            test -s "output/$f"
+          done
+          echo "All required outputs exist."
 
-      - name: Find Blender file
-        run: |
-          BLEND_FILE=$(find . -type f -name "*.blend" | head -n 1)
-
-          if [ -z "$BLEND_FILE" ]; then
-            echo "ERROR: No .blend file was created."
-            exit 1
-          fi
-
-          echo "Found: $BLEND_FILE"
-          cp "$BLEND_FILE" output/Preshburg_Blvd_Unit_401.blend
-
-      - name: Upload Blender project
+      - name: Upload complete model package
         uses: actions/upload-artifact@v4
         with:
-          name: Preshburg-Blvd-Unit-401-Blender
-          path: output/Preshburg_Blvd_Unit_401.blend
+          name: Preshburg-Blvd-Unit-401-Complete
+          path: output/
           if-no-files-found: error
+          retention-days: 30
