@@ -36,7 +36,9 @@ jobs:
           set -euo pipefail
           rm -rf output
           mkdir -p output
-          ./blender/blender --background --factory-startup --python build_preshburg.py
+          ./blender/blender --background --factory-startup --python-exit-code 1 --python "$GITHUB_WORKSPACE/build_preshburg.py"
+          echo "Generated files:"
+          find "$GITHUB_WORKSPACE/output" -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort
 
       - name: Validate outputs
         shell: bash
